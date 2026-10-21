@@ -1,17 +1,27 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
-import { Readable } from 'stream';
+import { v2 as cloudinary, type UploadApiErrorResponse, type UploadApiResponse } from 'cloudinary';
 import KMSKey, { IKMSKey } from '../models/KMSKey.model';
 import Asset, { IAsset } from '../models/Asset.model';
 import SPVRecordModel from '../models/SPVRecord.model';
 import { ipfsService } from './ipfs.service';
 import { kmsAuditService } from './kmsAudit.service';
-import { v2 as cloudinary } from 'cloudinary';
+import logger from '../utils/logger';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96-bit nonce is standard for GCM buffers
 const AUTH_TAG_LENGTH = 16; // 128-bit auth tag
 const DATA_KEY_LENGTH = 32; // AES-256 data key
+
+function unexpiredFilter(now: Date): Record<string, unknown> {
+  return {
+    $or: [
+      { expiresAt: { $exists: false } },
+      { expiresAt: null },
+      { expiresAt: { $gt: now } },
+    ],
+  };
+}
 
 export interface RotateKeyResult {
   oldKeyVersion: string;
@@ -364,7 +374,7 @@ export class KmsService {
 
   /** Reads KMS_MASTER_KEY (64 hex characters) used to wrap per-asset data keys. */
   private resolveWrappingKey(): Buffer {
-    const hex = process.env.KMS_MASTER_KEY;
+    const hex = process.env.KMS_MASTER_KEY ?? process.env.MASTER_KEY;
     if (!hex || !/^[0-9a-fA-F]{64}$/.test(hex)) {
       throw new Error('KMS_MASTER_KEY must be a 64-character hex string (32 bytes for AES-256)');
     }
@@ -421,42 +431,9 @@ export class KmsService {
           resolve(result);
         }
       );
-
-        asset.encryptionKeyVersion = newKeyVersion;
-        await asset.save({ session });
-      }
-
-      // Deactivate old key
-      activeKey.isActive = false;
-      await activeKey.save({ session });
-
-      // Save new key
-      const newKey = new KMSKey({
-        creatorId: userId,
-        keyVersion: newKeyVersion,
-        algorithm: ALGORITHM.toUpperCase(),
-        encryptedKeyValue: encryptedNewKey.encrypted,
-        iv: encryptedNewKey.iv,
-        authTag: encryptedNewKey.authTag,
-        isActive: true
-      });
-
-      await newKey.save({ session });
-      await kmsAuditService.record(
-        {
-          action: 'rotate',
-          actorId: userId,
-          keyId: newKey._id,
-          keyVersion: newKeyVersion,
-          metadata: {
-            previousKeyId: activeKey._id.toString(),
-            previousKeyVersion: oldKeyVersion,
-            assetsReEncrypted: assetsToReEncrypt.length,
-          },
-        },
-        session
-      );
-      await session.commitTransaction();
+      uploadStream.end(buffer);
+    });
+  }
 
   /**
    * Deletes replaced or orphaned Cloudinary blobs. Failures are logged rather
