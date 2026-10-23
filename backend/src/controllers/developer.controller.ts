@@ -1,113 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { generateApiKeyForUser } from '../services/developer.service';
-import { webhookRegistrationService } from '../services/webhookRegistration.service';
-import { webhookDeliveryService } from '../services/webhookDelivery.service';
-import type {
-  CreateWebhookRegistrationInput,
-  UpdateWebhookRegistrationInput,
-} from '../services/webhookRegistration.service';
-import type { IWebhookRegistration } from '../models/WebhookRegistration.model';
-import { AppError } from '../errors/AppError';
-
-function requesterId(req: Request): string {
-  if (!req.user) throw new AppError('Authentication required', 401, 'AUTH_REQUIRED');
-  return String(req.user._id);
-}
-
-function registrationResponse(registration: IWebhookRegistration) {
-  return {
-    id: String(registration._id),
-    url: registration.url,
-    events: registration.events,
-    isActive: registration.isActive,
-    createdAt: registration.createdAt,
-    updatedAt: registration.updatedAt,
-  };
-}
-
-export const createWebhookRegistration = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const result = await webhookRegistrationService.create(
-      requesterId(req),
-      req.body as CreateWebhookRegistrationInput
-    );
-    res.status(201).json({
-      success: true,
-      data: { ...registrationResponse(result.registration), secret: result.secret },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const listWebhookRegistrations = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const registrations = await webhookRegistrationService.list(requesterId(req));
-    res.status(200).json({ success: true, data: registrations.map(registrationResponse) });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const updateWebhookRegistration = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const registration = await webhookRegistrationService.update(
-      requesterId(req),
-      req.params.id,
-      req.body as UpdateWebhookRegistrationInput
-    );
-    res.status(200).json({ success: true, data: registrationResponse(registration) });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const deleteWebhookRegistration = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    await webhookRegistrationService.remove(requesterId(req), req.params.id);
-    res.status(200).json({ success: true, data: { id: req.params.id, deleted: true } });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const listWebhookDeliveries = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { limit, skip } = res.locals.deliveryPagination as { limit: number; skip: number };
-    const result = await webhookDeliveryService.listForRegistration(
-      requesterId(req), req.params.id, limit, skip
-    );
-    res.status(200).json({
-      success: true,
-      data: result.deliveries,
-      total: result.total,
-      limit,
-      skip,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
+import { webhookRegistrationService, WebhookRegistrationError } from '../services/webhookRegistration.service';
+import type { NextFunction } from 'express';
 
 export const generateApiKey = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -132,5 +26,75 @@ export const generateApiKey = async (req: Request, res: Response): Promise<void>
       return;
     }
     res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+function authenticatedOwnerId(req: Request): string {
+  if (!req.user) throw new WebhookRegistrationError('Authentication required', 401);
+  return String(req.user._id);
+}
+
+export const createWebhookRegistration = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const { registration, secret } = await webhookRegistrationService.create(authenticatedOwnerId(req), body);
+    res.status(201).json({
+      success: true,
+      data: {
+        id: registration.id,
+        url: registration.url,
+        events: registration.events,
+        isActive: registration.isActive,
+        secret,
+        createdAt: registration.createdAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const listWebhookRegistrations = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const registrations = await webhookRegistrationService.list(authenticatedOwnerId(req));
+    res.status(200).json({
+      success: true,
+      data: registrations.map(({ id, url, events, isActive, createdAt, updatedAt }) => ({
+        id, url, events, isActive, createdAt, updatedAt,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateWebhookRegistration = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const registration = await webhookRegistrationService.update(
+      authenticatedOwnerId(req), req.params.id,
+      { url: body.url, events: body.events, isActive: body.isActive }
+    );
+    res.status(200).json({
+      success: true,
+      data: {
+        id: registration.id,
+        url: registration.url,
+        events: registration.events,
+        isActive: registration.isActive,
+        updatedAt: registration.updatedAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteWebhookRegistration = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    await webhookRegistrationService.remove(authenticatedOwnerId(req), req.params.id);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
   }
 };

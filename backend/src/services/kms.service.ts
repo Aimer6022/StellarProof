@@ -1,13 +1,11 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { v2 as cloudinary, type UploadApiErrorResponse, type UploadApiResponse } from 'cloudinary';
 import KMSKey, { IKMSKey } from '../models/KMSKey.model';
 import Asset, { IAsset } from '../models/Asset.model';
 import SPVRecordModel from '../models/SPVRecord.model';
 import { ipfsService } from './ipfs.service';
 import { kmsAuditService } from './kmsAudit.service';
-import { v2 as cloudinary, type UploadApiErrorResponse, type UploadApiResponse } from 'cloudinary';
-import { createWebhookEvent, webhookService } from './webhook.service';
-import { VerificationWebhookEvent } from '../types/verification.types';
 import logger from '../utils/logger';
 
 const ALGORITHM = 'aes-256-gcm';

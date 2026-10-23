@@ -1,16 +1,13 @@
-import { Router, type NextFunction, type Request, type Response } from 'express';
-import { z } from 'zod';
+import { Router } from 'express';
 import {
   createWebhookRegistration,
   deleteWebhookRegistration,
   generateApiKey,
-  listWebhookDeliveries,
   listWebhookRegistrations,
   updateWebhookRegistration,
 } from '../controllers/developer.controller';
 import { protect } from '../middlewares/auth.middleware';
-import { validateBody, validateParams } from '../middlewares/validate';
-import { VerificationWebhookEvent } from '../types/verification.types';
+import { createKmsBackup, listKmsBackups, restoreKmsBackup } from '../controllers/kmsBackup.controller';
 
 const router = Router();
 const webhookEvents = Object.values(VerificationWebhookEvent) as [
@@ -49,22 +46,12 @@ function validateDeliveryQuery(req: Request, res: Response, next: NextFunction):
 }
 
 router.post('/keys', generateApiKey);
-router.post('/webhooks', protect, validateBody(createWebhookSchema), createWebhookRegistration);
+router.post('/webhooks', protect, createWebhookRegistration);
 router.get('/webhooks', protect, listWebhookRegistrations);
-router.patch(
-  '/webhooks/:id',
-  protect,
-  validateParams(idParamsSchema),
-  validateBody(updateWebhookSchema),
-  updateWebhookRegistration
-);
-router.delete('/webhooks/:id', protect, validateParams(idParamsSchema), deleteWebhookRegistration);
-router.get(
-  '/webhooks/:id/deliveries',
-  protect,
-  validateParams(idParamsSchema),
-  validateDeliveryQuery,
-  listWebhookDeliveries
-);
+router.patch('/webhooks/:id', protect, updateWebhookRegistration);
+router.delete('/webhooks/:id', protect, deleteWebhookRegistration);
+router.post('/kms/backups', protect, createKmsBackup);
+router.get('/kms/backups', protect, listKmsBackups);
+router.post('/kms/backups/:id/restore', protect, restoreKmsBackup);
 
 export default router;
