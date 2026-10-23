@@ -4,6 +4,10 @@ import { apiKeyUsageService } from '../services/apiKeyUsage.service';
 import { userService } from '../services/user.service';
 import { AppError } from '../errors/AppError';
 
+/**
+ * Generate API key for user
+ * @route POST /api/v1/developer/keys
+ */
 export const generateApiKey = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.body.userId || (req as any).user?.id;
