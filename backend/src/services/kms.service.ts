@@ -207,6 +207,19 @@ export class KmsService {
     }
 
     await this.destroyBlobs(blobs.replaced);
+    void webhookService.enqueueForOwner(
+      userId,
+      createWebhookEvent(VerificationWebhookEvent.KMS_KEY_ROTATED, {
+        keyVersion: result.newKeyVersion,
+        previousKeyVersion: result.oldKeyVersion,
+        assetsReEncrypted: result.assetsReEncrypted,
+      })
+    ).catch((error: unknown) => {
+      logger.error('Failed to enqueue KMS rotation webhook', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
     return result;
   }
 

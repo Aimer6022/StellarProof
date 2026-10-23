@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { generateApiKeyForUser } from '../services/developer.service';
 import { webhookRegistrationService, WebhookRegistrationError } from '../services/webhookRegistration.service';
 import type { NextFunction } from 'express';
