@@ -1,8 +1,14 @@
-import type { NextFunction, Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
+import { StatusCodes } from 'http-status-codes';
 import { generateApiKeyForUser } from '../services/developer.service';
-import { webhookRegistrationService, WebhookRegistrationError } from '../services/webhookRegistration.service';
-import type { NextFunction } from 'express';
+import { createApp, registerWebhook, getAppDetails, listApps } from '../services/app.service';
+import { AppError } from '../errors/AppError';
+import { CreateAppDTO, RegisterWebhookDTO } from '../types/app.types';
 
+/**
+ * Generate API key for user
+ * @route POST /api/v1/developer/keys
+ */
 export const generateApiKey = async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.body.userId || (req as any).user?.id;
@@ -29,71 +35,134 @@ export const generateApiKey = async (req: Request, res: Response): Promise<void>
   }
 };
 
-function authenticatedOwnerId(req: Request): string {
-  if (!req.user) throw new WebhookRegistrationError('Authentication required', 401);
-  return String(req.user._id);
-}
-
-export const createWebhookRegistration = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+/**
+ * Create a new app for a developer
+ * @route POST /api/v1/developer/apps
+ */
+export const createDeveloperApp = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const { registration, secret } = await webhookRegistrationService.create(authenticatedOwnerId(req), body);
-    res.status(201).json({
+    const userId = (req as any).user?.id;
+    
+    if (!userId) {
+      throw new AppError('Unauthorized. User ID required.', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
+    }
+
+    const dto: CreateAppDTO = {
+      name: req.body.name,
+      description: req.body.description,
+    };
+
+    const app = await createApp(userId, dto);
+
+    res.status(StatusCodes.CREATED).json({
       success: true,
-      data: {
-        id: registration.id,
-        url: registration.url,
-        events: registration.events,
-        isActive: registration.isActive,
-        secret,
-        createdAt: registration.createdAt,
-      },
+      data: app,
+      message: 'App created successfully.',
     });
   } catch (error) {
     next(error);
   }
 };
 
-export const listWebhookRegistrations = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+/**
+ * List all apps for a developer
+ * @route GET /api/v1/developer/apps
+ */
+export const listDeveloperApps = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const registrations = await webhookRegistrationService.list(authenticatedOwnerId(req));
-    res.status(200).json({
+    const userId = (req as any).user?.id;
+    
+    if (!userId) {
+      throw new AppError('Unauthorized. User ID required.', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
+    }
+
+    const apps = await listApps(userId);
+
+    res.status(StatusCodes.OK).json({
       success: true,
-      data: registrations.map(({ id, url, events, isActive, createdAt, updatedAt }) => ({
-        id, url, events, isActive, createdAt, updatedAt,
-      })),
+      data: apps,
+      message: 'Apps retrieved successfully.',
     });
   } catch (error) {
     next(error);
   }
 };
 
-export const updateWebhookRegistration = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+/**
+ * Get app details with webhooks
+ * @route GET /api/v1/developer/apps/:appId
+ */
+export const getAppDetailsController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
-    const registration = await webhookRegistrationService.update(
-      authenticatedOwnerId(req), req.params.id,
-      { url: body.url, events: body.events, isActive: body.isActive }
-    );
-    res.status(200).json({
+    const userId = (req as any).user?.id;
+    const appId = req.params.appId;
+    
+    if (!userId) {
+      throw new AppError('Unauthorized. User ID required.', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
+    }
+
+    if (!appId) {
+      throw new AppError('App ID is required', StatusCodes.BAD_REQUEST, 'MISSING_APP_ID');
+    }
+
+    const appDetails = await getAppDetails(userId, appId);
+
+    res.status(StatusCodes.OK).json({
       success: true,
-      data: {
-        id: registration.id,
-        url: registration.url,
-        events: registration.events,
-        isActive: registration.isActive,
-        updatedAt: registration.updatedAt,
-      },
+      data: appDetails,
+      message: 'App details retrieved successfully.',
     });
   } catch (error) {
     next(error);
   }
 };
 
-export const deleteWebhookRegistration = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+/**
+ * Register a webhook for an app
+ * @route POST /api/v1/developer/apps/:appId/webhooks
+ * @returns Generated webhook with HMAC secret
+ */
+export const registerAppWebhook = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    await webhookRegistrationService.remove(authenticatedOwnerId(req), req.params.id);
-    res.status(204).send();
+    const userId = (req as any).user?.id;
+    const appId = req.params.appId;
+    
+    if (!userId) {
+      throw new AppError('Unauthorized. User ID required.', StatusCodes.UNAUTHORIZED, 'UNAUTHORIZED');
+    }
+
+    if (!appId) {
+      throw new AppError('App ID is required', StatusCodes.BAD_REQUEST, 'MISSING_APP_ID');
+    }
+
+    const dto: RegisterWebhookDTO = {
+      url: req.body.url,
+      events: req.body.events,
+    };
+
+    const webhook = await registerWebhook(userId, appId, dto);
+
+    res.status(StatusCodes.CREATED).json({
+      success: true,
+      data: webhook,
+      message: 'Webhook registered successfully. Store the secret securely.',
+    });
   } catch (error) {
     next(error);
   }

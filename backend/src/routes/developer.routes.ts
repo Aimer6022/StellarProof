@@ -1,13 +1,9 @@
 import { Router } from 'express';
-import {
-  createWebhookRegistration,
-  deleteWebhookRegistration,
-  generateApiKey,
-  listWebhookRegistrations,
-  updateWebhookRegistration,
-} from '../controllers/developer.controller';
-import { protect } from '../middlewares/auth.middleware';
-import { createKmsBackup, listKmsBackups, restoreKmsBackup } from '../controllers/kmsBackup.controller';
+import { generateApiKey, createDeveloperApp, listDeveloperApps, getAppDetailsController, registerAppWebhook } from '../controllers/developer.controller';
+import { protect, restrictTo } from '../middlewares/auth.middleware';
+import { zodBody } from '../middlewares/zodValidate';
+import { zodParams } from '../middlewares/zodValidateParams';
+import { createAppSchema, registerWebhookSchema, appIdSchema } from '../middlewares/app.validation';
 
 const router = Router();
 const webhookEvents = Object.values(VerificationWebhookEvent) as [
@@ -45,6 +41,11 @@ function validateDeliveryQuery(req: Request, res: Response, next: NextFunction):
   next();
 }
 
+// Apply authentication middleware to all routes
+router.use(protect);
+router.use(restrictTo('developer', 'admin'));
+
+// API Key management
 router.post('/keys', generateApiKey);
 router.post('/webhooks', protect, createWebhookRegistration);
 router.get('/webhooks', protect, listWebhookRegistrations);
@@ -53,5 +54,18 @@ router.delete('/webhooks/:id', protect, deleteWebhookRegistration);
 router.post('/kms/backups', protect, createKmsBackup);
 router.get('/kms/backups', protect, listKmsBackups);
 router.post('/kms/backups/:id/restore', protect, restoreKmsBackup);
+
+// App management
+router.post('/apps', zodBody(createAppSchema), createDeveloperApp);
+router.get('/apps', listDeveloperApps);
+router.get('/apps/:appId', zodParams(appIdSchema), getAppDetailsController);
+
+// Webhook registration
+router.post(
+  '/apps/:appId/webhooks',
+  zodParams(appIdSchema),
+  zodBody(registerWebhookSchema),
+  registerAppWebhook
+);
 
 export default router;
